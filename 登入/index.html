@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>會員系統與筆記管理</title>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body>
+  <div class="container my-4">
+    <h1 class="text-center">會員系統與筆記管理</h1>
+
+    <!-- 登入與查看會員資訊 -->
+    <div class="d-flex justify-content-between align-items-center my-3">
+      <button id="loginBtn" class="btn btn-primary">登入</button>
+      <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#memberModal">
+        查看會員資訊
+      </button>
+      <button id="logoutBtn" class="btn btn-danger d-none">登出</button>
+    </div>
+
+    <!-- 會員資訊 Modal -->
+    <div class="modal fade" id="memberModal" tabindex="-1" aria-labelledby="memberModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="memberModalLabel">所有會員資訊</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <ul id="memberList" class="list-group"></ul>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 筆記管理 -->
+    <div id="noteManager" class="mt-4 d-none">
+      <h2>筆記管理</h2>
+      <div class="mb-3">
+        <input id="noteTitle" class="form-control" placeholder="標題">
+      </div>
+      <div class="mb-3">
+        <textarea id="noteContent" class="form-control" rows="3" placeholder="內容"></textarea>
+      </div>
+      <button id="addNoteBtn" class="btn btn-success mb-3">新增筆記</button>
+
+      <h3>筆記列表</h3>
+      <ul id="noteList" class="list-group"></ul>
+    </div>
+  </div>
+
+  <script>
+    // Firebase 設定
+    const firebaseConfig = {
+      apiKey: "AIzaSyCbkc5OkrEE6Qp7kWhQO4kytJt4kSaLtQw",
+      authDomain: "fir-c921d.firebaseapp.com",
+      projectId: "fir-c921d",
+      databaseURL: "https://fir-c921d-default-rtdb.asia-southeast1.firebasedatabase.app",
+      storageBucket: "fir-c921d.appspot.com",
+      messagingSenderId: "510990915888",
+      appId: "1:510990915888:web:3b3592742e8f587e7bd0f5"
+    };
+
+    // 初始化 Firebase
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const database = firebase.database();
+
+    const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const noteManager = document.getElementById("noteManager");
+    const memberList = document.getElementById("memberList");
+    const noteList = document.getElementById("noteList");
+    const noteTitle = document.getElementById("noteTitle");
+    const noteContent = document.getElementById("noteContent");
+    const addNoteBtn = document.getElementById("addNoteBtn");
+
+    let currentUser = null;
+
+    // 登入功能
+    loginBtn.addEventListener("click", () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      auth.signInWithPopup(provider).then((result) => {
+        currentUser = result.user;
+        loginBtn.classList.add("d-none");
+        logoutBtn.classList.remove("d-none");
+        noteManager.classList.remove("d-none");
+        loadNotes();
+        alert("登入成功！");
+      }).catch((error) => {
+        console.error("登入失敗", error);
+      });
+    });
+
+    // 登出功能
+    logoutBtn.addEventListener("click", () => {
+      auth.signOut().then(() => {
+        currentUser = null;
+        loginBtn.classList.remove("d-none");
+        logoutBtn.classList.add("d-none");
+        noteManager.classList.add("d-none");
+        noteList.innerHTML = "";
+        alert("已登出！");
+      });
+    });
+
+    // 加載會員資訊
+    const loadMembers = () => {
+      const usersRef = database.ref("users");
+      usersRef.once("value").then((snapshot) => {
+        memberList.innerHTML = "";
+        snapshot.forEach((childSnapshot) => {
+          const user = childSnapshot.val();
+          const listItem = document.createElement("li");
+          listItem.className = "list-group-item";
+          listItem.textContent = `名稱: ${user.name}, 電子郵件: ${user.email}`;
+          memberList.appendChild(listItem);
+        });
+      });
+    };
+    document.getElementById("memberModal").addEventListener("show.bs.modal", loadMembers);
+
+    // 新增筆記
+    const addNote = () => {
+      const title = noteTitle.value.trim();
+      const content = noteContent.value.trim();
+      if (!title || !content) {
+        alert("標題和內容不能為空！");
+        return;
+      }
+      const noteRef = database.ref("notes/" + currentUser.uid).push();
+      noteRef.set({ title, content }).then(() => {
+        addNoteToList(noteRef.key, title, content);
+        noteTitle.value = "";
+        noteContent.value = "";
+        alert("筆記已新增！");
+      });
+    };
+
+    // 編輯筆記
+    function editNote(noteId) {
+      const noteRef = database.ref("notes/" + currentUser.uid + "/" + noteId);
+      noteRef.once("value").then((snapshot) => {
+        const note = snapshot.val();
+        noteTitle.value = note.title;
+        noteContent.value = note.content;
+        addNoteBtn.textContent = "儲存修改";
+        addNoteBtn.onclick = () => {
+          const updatedTitle = noteTitle.value.trim();
+          const updatedContent = noteContent.value.trim();
+          if (!updatedTitle || !updatedContent) {
+            alert("標題和內容不能為空！");
+            return;
+          }
+          noteRef.set({ title: updatedTitle, content: updatedContent }).then(() => {
+            loadNotes(); // 重新加載筆記列表，顯示更新後的筆記
+            noteTitle.value = "";
+            noteContent.value = "";
+            addNoteBtn.textContent = "新增筆記";
+            addNoteBtn.onclick = addNote;
+            alert("筆記已更新！");
+          });
+        };
+      });
+    }
+
+    // 刪除筆記
+    const deleteNote = (noteId) => {
+      const noteRef = database.ref("notes/" + currentUser.uid + "/" + noteId);
+      noteRef.remove().then(() => {
+        loadNotes(); // 重新加載筆記列表，顯示刪除後的筆記
+        alert("筆記已刪除！");
+      });
+    };
+
+    // 加載筆記
+    const loadNotes = () => {
+      const notesRef = database.ref("notes/" + currentUser.uid);
+      notesRef.once("value").then((snapshot) => {
+        noteList.innerHTML = ""; // 清空筆記列表
+        snapshot.forEach((childSnapshot) => {
+          const note = childSnapshot.val();
+          addNoteToList(childSnapshot.key, note.title, note.content);
+        });
+      });
+    };
+
+    // 新增筆記到列表
+    const addNoteToList = (noteId, title, content) => {
+      const listItem = document.createElement("li");
+      listItem.id = noteId;
+      listItem.className = "list-group-item d-flex justify-content-between align-items-center";
+      listItem.innerHTML = `
+        <div>
+          <strong>${title}</strong><br>${content}
+        </div>
+        <div>
+          <button class="btn btn-warning btn-sm me-2" onclick="editNote('${noteId}')">編輯</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteNote('${noteId}')">刪除</button>
+        </div>
+      `;
+      noteList.appendChild(listItem);
+    };
+  </script>
+</body>
+</html>
